@@ -11,7 +11,7 @@ export const Worker = () => {
   const { reports, updateReport } = useAppContext();
   const navigate = useNavigate();
   const pendingReports = reports.filter(r => r.status === "Pending");
-  
+
   const [selectedReport, setSelectedReport] = useState<string | null>(null);
   const [mode, setMode] = useState<"select" | "camera" | "analysis">("select");
   const [capturedImg, setCapturedImg] = useState<string | null>(null);
@@ -19,47 +19,55 @@ export const Worker = () => {
   const [scanResult, setScanResult] = useState<{ passed: boolean; ela: number; clean: number } | null>(null);
   const webcamRef = useRef<Webcam>(null);
 
-  const report = pendingReports.find(r => r.id === selectedReport);
+  const report = reports.find(r => r.id === selectedReport);
 
-  const startAnalysis = () => {
+  // ✅ FIX 1: Accept imgSrc and reportId as parameters instead of reading from stale closure state
+  const startAnalysis = useCallback((imgSrc: string, reportId: string) => {
     setMode("analysis");
     setScanState("matching");
-    
-    // Simulate 3-layer analysis workflow
+
     setTimeout(() => {
-      setScanState("segmenting"); // AI segments garbage zone
+      setScanState("segmenting");
       setTimeout(() => {
-        setScanState("forensic"); // Error Level Analysis
+        setScanState("forensic");
         setTimeout(async () => {
-          // Final Result
-          const passed = Math.random() > 0.2; // 80% pass rate simulation
+          const passed = Math.random() > 0.2;
           const result = {
             passed,
-            ela: passed ? Math.floor(Math.random() * 10) + 90 : Math.floor(Math.random() * 40) + 40,
-            clean: passed ? Math.floor(Math.random() * 10) + 90 : Math.floor(Math.random() * 30) + 50,
+            ela: passed
+              ? Math.floor(Math.random() * 10) + 90
+              : Math.floor(Math.random() * 40) + 40,
+            clean: passed
+              ? Math.floor(Math.random() * 10) + 90
+              : Math.floor(Math.random() * 30) + 50,
           };
           setScanResult(result);
           setScanState("result");
-          
-          if (report) {
-            await updateReport(report.id, {
+
+          // ✅ FIX 2: Use passed-in imgSrc and reportId — no stale closure values
+          await updateReport(
+            reportId,
+            {
               status: passed ? "Verified" : "Rejected",
               integrityScore: result.ela,
-              cleanlinessScore: result.clean
-            }, capturedImg || "");
-          }
+              cleanlinessScore: result.clean,
+            },
+            imgSrc
+          );
         }, 2000);
       }, 2000);
     }, 2000);
-  };
+  }, [updateReport]);
 
+  // ✅ FIX 3: Pass imgSrc and reportId directly to startAnalysis
   const handleCapture = useCallback(() => {
-    if (webcamRef.current) {
+    if (webcamRef.current && selectedReport) {
       const imageSrc = webcamRef.current.getScreenshot();
+      if (!imageSrc) return;
       setCapturedImg(imageSrc);
-      startAnalysis();
+      startAnalysis(imageSrc, selectedReport); // pass values directly, don't rely on state
     }
-  }, [webcamRef]);
+  }, [webcamRef, selectedReport, startAnalysis]);
 
   return (
     <div className="w-full max-w-3xl mx-auto py-8 px-4">
@@ -92,17 +100,25 @@ export const Worker = () => {
             ) : (
               <div className="grid gap-4">
                 {pendingReports.map(r => (
-                  <div key={r.id} className="bg-white p-4 rounded-2xl border border-slate-200 flex items-center gap-4 shadow-sm hover:shadow-md transition-shadow">
+                  <div
+                    key={r.id}
+                    className="bg-white p-4 rounded-2xl border border-slate-200 flex items-center gap-4 shadow-sm hover:shadow-md transition-shadow"
+                  >
                     <img src={r.citizenImage} alt="Before" className="w-20 h-20 rounded-xl object-cover" />
                     <div className="flex-grow">
                       <div className="flex justify-between items-start">
                         <h3 className="font-semibold text-slate-900">{r.id}</h3>
-                        <span className="text-xs font-medium px-2 py-1 bg-amber-100 text-amber-700 rounded-md">Pending</span>
+                        <span className="text-xs font-medium px-2 py-1 bg-amber-100 text-amber-700 rounded-md">
+                          Pending
+                        </span>
                       </div>
                       <p className="text-sm text-slate-500 mt-1">{r.location}</p>
                     </div>
                     <button
-                      onClick={() => { setSelectedReport(r.id); setMode("camera"); }}
+                      onClick={() => {
+                        setSelectedReport(r.id);
+                        setMode("camera");
+                      }}
                       className="px-4 py-2 bg-slate-900 text-white text-sm font-medium rounded-lg hover:bg-slate-800 transition-colors whitespace-nowrap"
                     >
                       Resolve
@@ -122,16 +138,22 @@ export const Worker = () => {
             exit={{ opacity: 0 }}
             className="w-full"
           >
-             <div className="w-full flex justify-between items-center mb-6">
-              <button onClick={() => setMode("select")} className="text-slate-500 hover:text-slate-800 flex items-center gap-2">
+            <div className="w-full flex justify-between items-center mb-6">
+              <button
+                onClick={() => setMode("select")}
+                className="text-slate-500 hover:text-slate-800 flex items-center gap-2"
+              >
                 <ArrowLeft size={20} /> Back
               </button>
-              <h2 className="text-xl font-bold flex items-center gap-2"><Crosshair size={20}/> Align Shot</h2>
+              <h2 className="text-xl font-bold flex items-center gap-2">
+                <Crosshair size={20} /> Align Shot
+              </h2>
               <div className="w-20" />
             </div>
 
             <div className="bg-amber-50 border-l-4 border-amber-500 p-4 mb-6 rounded-r-xl text-sm text-amber-800">
-              <strong>Anti-Fraud Protection:</strong> Gallery upload disabled. Match the "Ghost Overlay" exactly to ensure location verification.
+              <strong>Anti-Fraud Protection:</strong> Gallery upload disabled. Match the "Ghost
+              Overlay" exactly to ensure location verification.
             </div>
 
             <div className="relative w-full aspect-[3/4] md:aspect-video bg-black rounded-3xl overflow-hidden shadow-2xl">
@@ -142,9 +164,8 @@ export const Worker = () => {
                 videoConstraints={{ facingMode: "environment" }}
                 className="absolute inset-0 w-full h-full object-cover"
               />
-              
-              {/* Ghost Overlay */}
-              <div 
+
+              <div
                 className="absolute inset-0 pointer-events-none opacity-40 mix-blend-overlay bg-cover bg-center"
                 style={{ backgroundImage: `url(${report.citizenImage})` }}
               />
@@ -173,15 +194,16 @@ export const Worker = () => {
             {scanState !== "result" ? (
               <div className="text-center w-full max-w-md">
                 <div className="relative w-full aspect-video rounded-2xl overflow-hidden mb-8 shadow-2xl">
-                  <img src={capturedImg!} alt="Captured" className="w-full h-full object-cover brightness-50" />
-                  
-                  {/* Scanning Effect */}
-                  <motion.div 
+                  <img
+                    src={capturedImg!}
+                    alt="Captured"
+                    className="w-full h-full object-cover brightness-50"
+                  />
+                  <motion.div
                     animate={{ y: ["0%", "100%", "0%"] }}
                     transition={{ duration: 2, repeat: Infinity, ease: "linear" }}
                     className="absolute inset-0 w-full h-1 bg-emerald-400 shadow-[0_0_15px_rgba(52,211,153,1)] z-10"
                   />
-                  
                   <div className="absolute inset-0 flex items-center justify-center text-white/90 font-mono text-sm">
                     {scanState === "matching" && "SIFT/ORB Location Matching..."}
                     {scanState === "segmenting" && "Segmenting Garbage Zone..."}
@@ -192,15 +214,31 @@ export const Worker = () => {
                 <div className="space-y-4">
                   <div className="flex items-center justify-between text-sm font-medium text-slate-700">
                     <span>1. Location Match</span>
-                    {scanState !== "matching" ? <CheckCircle className="text-emerald-500" size={16} /> : <Activity className="text-blue-500 animate-spin" size={16} />}
+                    {scanState !== "matching" ? (
+                      <CheckCircle className="text-emerald-500" size={16} />
+                    ) : (
+                      <Activity className="text-blue-500 animate-spin" size={16} />
+                    )}
                   </div>
                   <div className="flex items-center justify-between text-sm font-medium text-slate-700">
                     <span>2. Cleanliness Threshold</span>
-                    {(scanState === "forensic" || scanState === "result") ? <CheckCircle className="text-emerald-500" size={16} /> : (scanState === "segmenting" ? <Activity className="text-blue-500 animate-spin" size={16} /> : <span className="text-slate-300">-</span>)}
+                    {scanState === "forensic" || scanState === "result" ? (
+                      <CheckCircle className="text-emerald-500" size={16} />
+                    ) : scanState === "segmenting" ? (
+                      <Activity className="text-blue-500 animate-spin" size={16} />
+                    ) : (
+                      <span className="text-slate-300">-</span>
+                    )}
                   </div>
                   <div className="flex items-center justify-between text-sm font-medium text-slate-700">
                     <span>3. Forensic Scan (ELA)</span>
-                    {scanState === "result" ? <CheckCircle className="text-emerald-500" size={16} /> : (scanState === "forensic" ? <Activity className="text-blue-500 animate-spin" size={16} /> : <span className="text-slate-300">-</span>)}
+                    {scanState === "result" ? (
+                      <CheckCircle className="text-emerald-500" size={16} />
+                    ) : scanState === "forensic" ? (
+                      <Activity className="text-blue-500 animate-spin" size={16} />
+                    ) : (
+                      <span className="text-slate-300">-</span>
+                    )}
                   </div>
                 </div>
               </div>
@@ -210,39 +248,70 @@ export const Worker = () => {
                   <div className="bg-emerald-50 border border-emerald-200 p-8 rounded-3xl shadow-lg">
                     <CheckCircle className="mx-auto text-emerald-500 mb-4" size={56} />
                     <h2 className="text-2xl font-bold text-slate-900 mb-2">Verification Passed</h2>
-                    <p className="text-slate-600 mb-6">The location matches and the area is clean.</p>
-                    
+                    <p className="text-slate-600 mb-6">
+                      The location matches and the area is clean.
+                    </p>
                     <div className="grid grid-cols-2 gap-4 mb-8">
                       <div className="bg-white p-4 rounded-xl border border-emerald-100">
                         <div className="text-2xl font-bold text-emerald-600">{scanResult.ela}%</div>
-                        <div className="text-xs text-slate-500 font-medium uppercase tracking-wider">Integrity Score</div>
+                        <div className="text-xs text-slate-500 font-medium uppercase tracking-wider">
+                          Integrity Score
+                        </div>
                       </div>
                       <div className="bg-white p-4 rounded-xl border border-emerald-100">
-                        <div className="text-2xl font-bold text-emerald-600">{scanResult.clean}%</div>
-                        <div className="text-xs text-slate-500 font-medium uppercase tracking-wider">Cleanliness</div>
+                        <div className="text-2xl font-bold text-emerald-600">
+                          {scanResult.clean}%
+                        </div>
+                        <div className="text-xs text-slate-500 font-medium uppercase tracking-wider">
+                          Cleanliness
+                        </div>
                       </div>
                     </div>
-                    
-                    <button onClick={() => { setMode("select"); setSelectedReport(null); }} className="w-full py-3 bg-slate-900 text-white rounded-xl font-medium">Continue</button>
+                    <button
+                      onClick={() => {
+                        setMode("select");
+                        setSelectedReport(null);
+                        setScanResult(null);
+                        setScanState("idle");
+                      }}
+                      className="w-full py-3 bg-slate-900 text-white rounded-xl font-medium"
+                    >
+                      Continue
+                    </button>
                   </div>
                 ) : (
                   <div className="bg-red-50 border border-red-200 p-8 rounded-3xl shadow-lg">
                     <AlertTriangle className="mx-auto text-red-500 mb-4" size={56} />
-                    <h2 className="text-2xl font-bold text-slate-900 mb-2">Job Incomplete / Fraud</h2>
-                    <p className="text-slate-600 mb-6">High-entropy pixels detected or ELA failed.</p>
-                    
+                    <h2 className="text-2xl font-bold text-slate-900 mb-2">
+                      Job Incomplete / Fraud
+                    </h2>
+                    <p className="text-slate-600 mb-6">
+                      High-entropy pixels detected or ELA failed.
+                    </p>
                     <div className="grid grid-cols-2 gap-4 mb-8">
                       <div className="bg-white p-4 rounded-xl border border-red-100">
                         <div className="text-2xl font-bold text-red-600">{scanResult?.ela}%</div>
-                        <div className="text-xs text-slate-500 font-medium uppercase tracking-wider">Integrity Score</div>
+                        <div className="text-xs text-slate-500 font-medium uppercase tracking-wider">
+                          Integrity Score
+                        </div>
                       </div>
                       <div className="bg-white p-4 rounded-xl border border-red-100">
                         <div className="text-2xl font-bold text-red-600">{scanResult?.clean}%</div>
-                        <div className="text-xs text-slate-500 font-medium uppercase tracking-wider">Cleanliness</div>
+                        <div className="text-xs text-slate-500 font-medium uppercase tracking-wider">
+                          Cleanliness
+                        </div>
                       </div>
                     </div>
-                    
-                    <button onClick={() => setMode("camera")} className="w-full py-3 bg-slate-900 text-white rounded-xl font-medium">Retake Photo</button>
+                    <button
+                      onClick={() => {
+                        setMode("camera");
+                        setScanResult(null);
+                        setScanState("idle");
+                      }}
+                      className="w-full py-3 bg-slate-900 text-white rounded-xl font-medium"
+                    >
+                      Retake Photo
+                    </button>
                   </div>
                 )}
               </div>
