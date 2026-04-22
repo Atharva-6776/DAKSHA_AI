@@ -6,10 +6,16 @@ export type Report = {
   citizenImage: string;
   status: "Pending" | "Verified" | "Rejected";
   date: string;
-  location: string;
+  location: string;        // human-readable address / label
+  lat?: number;            // GPS latitude  (set when citizen submits)
+  lng?: number;            // GPS longitude (set when citizen submits)
+  workerLat?: number;      // GPS latitude  (set when worker resolves)
+  workerLng?: number;      // GPS longitude (set when worker resolves)
   workerImage?: string;
   integrityScore?: number;
   cleanlinessScore?: number;
+  yoloScore?: number;
+  opencvScore?: number;
 };
 
 type AppContextType = {
@@ -27,17 +33,15 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
   const [loading, setLoading] = useState(true);
 
   const API_URL = `https://${projectId}.supabase.co/functions/v1/make-server-84bb53da`;
-  
+
   const fetchReports = async () => {
     setLoading(true);
     try {
       const res = await fetch(`${API_URL}/reports`, {
-        headers: { Authorization: `Bearer ${publicAnonKey}` }
+        headers: { Authorization: `Bearer ${publicAnonKey}` },
       });
       const data = await res.json();
-      if (data.reports) {
-        setReports(data.reports);
-      }
+      if (data.reports) setReports(data.reports);
     } catch (err) {
       console.error("Failed to fetch reports:", err);
     } finally {
@@ -45,19 +49,17 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
     }
   };
 
-  useEffect(() => {
-    fetchReports();
-  }, []);
+  useEffect(() => { fetchReports(); }, []);
 
   const addReport = async (report: Partial<Report>, citizenImageBase64: string) => {
     try {
       await fetch(`${API_URL}/reports`, {
-        method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${publicAnonKey}`
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${publicAnonKey}`,
         },
-        body: JSON.stringify({ ...report, citizenImageBase64 })
+        body: JSON.stringify({ ...report, citizenImageBase64 }),
       });
       await fetchReports();
     } catch (err) {
@@ -65,15 +67,19 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
     }
   };
 
-  const updateReport = async (id: string, updates: Partial<Report>, workerImageBase64?: string) => {
+  const updateReport = async (
+    id: string,
+    updates: Partial<Report>,
+    workerImageBase64?: string
+  ) => {
     try {
       await fetch(`${API_URL}/reports/${id}`, {
-        method: 'PUT',
-        headers: { 
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${publicAnonKey}`
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${publicAnonKey}`,
         },
-        body: JSON.stringify({ ...updates, workerImageBase64 })
+        body: JSON.stringify({ ...updates, workerImageBase64 }),
       });
       await fetchReports();
     } catch (err) {
