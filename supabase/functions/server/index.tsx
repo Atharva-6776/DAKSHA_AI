@@ -44,11 +44,15 @@ const handleGetReports = async (c: any) => {
       let workerImage  = r.workerImage;
 
       if (r.citizenImagePath) {
-        const { data } = await supabase.storage.from(BUCKET_NAME).createSignedUrl(r.citizenImagePath, 3600);
+        const { data } = await supabase.storage
+          .from(BUCKET_NAME)
+          .createSignedUrl(r.citizenImagePath, 3600);
         if (data?.signedUrl) citizenImage = data.signedUrl;
       }
       if (r.workerImagePath) {
-        const { data } = await supabase.storage.from(BUCKET_NAME).createSignedUrl(r.workerImagePath, 3600);
+        const { data } = await supabase.storage
+          .from(BUCKET_NAME)
+          .createSignedUrl(r.workerImagePath, 3600);
         if (data?.signedUrl) workerImage = data.signedUrl;
       }
 
@@ -73,7 +77,7 @@ const handlePostReports = async (c: any) => {
     await ensureBucket(supabase);
 
     const body = await c.req.json();
-    // ✅ Now also accept lat/lng from citizen GPS
+    // ✅ Now accepts lat/lng from citizen GPS
     const { id, citizenImageBase64, location, date, lat, lng } = body;
 
     let citizenImagePath = null;
@@ -81,15 +85,17 @@ const handlePostReports = async (c: any) => {
       const base64Data = citizenImageBase64.replace(/^data:image\/\w+;base64,/, '');
       const buffer = base64ToUint8Array(base64Data);
       const fileName = `${id}-citizen-${Date.now()}.jpg`;
-      const { error } = await supabase.storage.from(BUCKET_NAME).upload(fileName, buffer, { contentType: 'image/jpeg' });
+      const { error } = await supabase.storage
+        .from(BUCKET_NAME)
+        .upload(fileName, buffer, { contentType: 'image/jpeg' });
       if (error) throw error;
       citizenImagePath = fileName;
     }
 
-    // ✅ Save lat/lng alongside report
+    // ✅ Save lat/lng so worker GPS distance check works
     const report: any = { id, status: 'Pending', date, location, citizenImagePath };
-    if (lat  !== undefined) report.lat  = lat;
-    if (lng  !== undefined) report.lng  = lng;
+    if (lat !== undefined) report.lat = lat;
+    if (lng !== undefined) report.lng = lng;
 
     await kv.set(`report_${id}`, report);
     return c.json({ success: true, report });
@@ -110,16 +116,16 @@ const handlePutReports = async (c: any) => {
     await ensureBucket(supabase);
 
     const body = await c.req.json();
-    // ✅ Now destructure ALL score fields + worker GPS
+    // ✅ All 4 score fields + worker GPS — nothing silently dropped
     const {
       workerImageBase64,
       status,
       integrityScore,
       cleanlinessScore,
-      yoloScore,       // ✅ NEW
-      opencvScore,     // ✅ NEW
-      workerLat,       // ✅ NEW
-      workerLng,       // ✅ NEW
+      yoloScore,    // ✅ YOLO detection score
+      opencvScore,  // ✅ OpenCV processing score
+      workerLat,    // ✅ Worker GPS latitude
+      workerLng,    // ✅ Worker GPS longitude
     } = body;
 
     let workerImagePath = null;
@@ -127,7 +133,9 @@ const handlePutReports = async (c: any) => {
       const base64Data = workerImageBase64.replace(/^data:image\/\w+;base64,/, '');
       const buffer = base64ToUint8Array(base64Data);
       const fileName = `${id}-worker-${Date.now()}.jpg`;
-      const { error } = await supabase.storage.from(BUCKET_NAME).upload(fileName, buffer, { contentType: 'image/jpeg' });
+      const { error } = await supabase.storage
+        .from(BUCKET_NAME)
+        .upload(fileName, buffer, { contentType: 'image/jpeg' });
       if (error) throw error;
       workerImagePath = fileName;
     }
@@ -135,7 +143,7 @@ const handlePutReports = async (c: any) => {
     const existing: any = await kv.get(`report_${id}`);
     if (!existing) return c.json({ error: 'Not found' }, 404);
 
-    // ✅ Spread all score fields — no more silent drops
+    // ✅ Spread all fields — nothing dropped
     const updated: any = {
       ...existing,
       status,

@@ -1,17 +1,15 @@
 import { useState, useRef, useCallback } from "react";
 import Webcam from "react-webcam";
-import { Camera, Image as ImageIcon, CheckCircle, Target, ArrowLeft, UploadCloud, MapPin } from "lucide-react";
+import { Camera, Image as ImageIcon, CheckCircle, Target, ArrowLeft, ArrowRight, UploadCloud, MapPin } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { useAppContext } from "../../context/AppProvider";
 import { useNavigate } from "react-router";
 
-// ── Brand tokens ──────────────────────────────────────────────────────────────
-const C = {
-  navy:  "#091f36",
-  blue:  "#0f2862",
-  red:   "#9e363a",
-  slate: "#4f5f76",
-  light: "#c8d4e3",
+const C = { yellow: "#feda6a", silver: "#d4d4dc", grey: "#393f4d", dark: "#1d1e22", darker: "#14151a" };
+const S = {
+  label: { fontFamily: "'Rajdhani', sans-serif", fontSize: 10, letterSpacing: "0.35em", textTransform: "uppercase" as const, color: C.yellow },
+  title: { fontFamily: "'Cormorant Garamond', serif", fontSize: 72, fontWeight: 300, fontStyle: "italic" as const, color: C.silver, lineHeight: 0.95, margin: 0 },
+  body:  { fontFamily: "'Rajdhani', sans-serif", fontSize: 15, color: "rgba(212,212,220,0.55)", lineHeight: 1.8, fontWeight: 300 as const, letterSpacing: "0.02em" },
 };
 
 export const Citizen = () => {
@@ -23,37 +21,27 @@ export const Citizen = () => {
   const { addReport } = useAppContext();
   const navigate = useNavigate();
 
-  // ── Capture + resolve GPS & address simultaneously ────────────────────────
+  const resolveLocation = (cb: (info: { label: string; lat?: number; lng?: number }) => void) => {
+    if (!navigator.geolocation) return cb({ label: "Location not supported" });
+    navigator.geolocation.getCurrentPosition(
+      async pos => {
+        const { latitude: lat, longitude: lng } = pos.coords;
+        try {
+          const res = await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json`, { headers: { "Accept-Language": "en" } });
+          const data = await res.json();
+          cb({ label: data.display_name ?? `${lat.toFixed(5)}, ${lng.toFixed(5)}`, lat, lng });
+        } catch { cb({ label: `${lat.toFixed(5)}, ${lng.toFixed(5)}`, lat, lng }); }
+      },
+      () => cb({ label: "Location unavailable" })
+    );
+  };
+
   const handleCapture = useCallback(() => {
     if (!webcamRef.current) return;
-    const imageSrc = webcamRef.current.getScreenshot();
-    if (!imageSrc) return;
-    setCapturedImg(imageSrc);
-
-    // Start GPS resolution immediately on capture
-    if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(
-        async pos => {
-          const { latitude: lat, longitude: lng } = pos.coords;
-          try {
-            const res = await fetch(
-              `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json`,
-              { headers: { "Accept-Language": "en" } }
-            );
-            const data = await res.json();
-            const label = data.display_name ?? `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
-            setLocationInfo({ label, lat, lng });
-          } catch {
-            setLocationInfo({ label: `${lat.toFixed(5)}, ${lng.toFixed(5)}`, lat, lng });
-          }
-        },
-        () => setLocationInfo({ label: "Location unavailable" }),
-        { enableHighAccuracy: true, timeout: 10_000, maximumAge: 0 }
-      );
-    } else {
-      setLocationInfo({ label: "Location not supported" });
-    }
-
+    const img = webcamRef.current.getScreenshot();
+    if (!img) return;
+    setCapturedImg(img);
+    resolveLocation(setLocationInfo);
     setMode("preview");
   }, [webcamRef]);
 
@@ -63,25 +51,7 @@ export const Citizen = () => {
     const reader = new FileReader();
     reader.onloadend = () => {
       setCapturedImg(reader.result as string);
-      // For gallery uploads, try GPS too
-      if (navigator.geolocation) {
-        navigator.geolocation.getCurrentPosition(
-          async pos => {
-            const { latitude: lat, longitude: lng } = pos.coords;
-            try {
-              const res = await fetch(
-                `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json`,
-                { headers: { "Accept-Language": "en" } }
-              );
-              const data = await res.json();
-              setLocationInfo({ label: data.display_name ?? `${lat.toFixed(5)}, ${lng.toFixed(5)}`, lat, lng });
-            } catch {
-              setLocationInfo({ label: `${lat.toFixed(5)}, ${lng.toFixed(5)}`, lat, lng });
-            }
-          },
-          () => setLocationInfo({ label: "Location unavailable" })
-        );
-      }
+      resolveLocation(setLocationInfo);
       setMode("preview");
     };
     reader.readAsDataURL(file);
@@ -90,183 +60,236 @@ export const Citizen = () => {
   const handleSubmit = async () => {
     setIsUploading(true);
     const newId = `RPT-${Math.floor(Math.random() * 9000) + 1000}`;
-
-    // ✅ Pass lat/lng to addReport so they get saved in the server
-    await addReport(
-      {
-        id: newId,
-        status: "Pending",
-        date: new Date().toISOString(),
-        location: locationInfo?.label ?? "Unknown location",
-        lat:  locationInfo?.lat,   // ✅ NEW
-        lng:  locationInfo?.lng,   // ✅ NEW
-      },
-      capturedImg ?? ""
-    );
-
+    await addReport({
+      id: newId, status: "Pending",
+      date: new Date().toISOString(),
+      location: locationInfo?.label ?? "Unknown",
+      lat: locationInfo?.lat,
+      lng: locationInfo?.lng,
+    }, capturedImg ?? "");
     setIsUploading(false);
     setMode("success");
   };
 
-  // ── Render ─────────────────────────────────────────────────────────────────
+  const divider = <div style={{ width: 32, height: 1, background: C.yellow, display: "inline-block" }} />;
+
   return (
-    <div className="w-full max-w-2xl mx-auto flex flex-col items-center py-12 px-4 relative z-10">
+    <div style={{ width: "100%", minHeight: "80vh", display: "flex", alignItems: "stretch" }}>
 
-      <AnimatePresence mode="wait">
+      {/* Left panel — hero image */}
+      <div style={{
+        width: "40%", position: "relative", overflow: "hidden",
+        display: "flex", flexDirection: "column", justifyContent: "flex-end",
+        minHeight: 600,
+      }}>
+        <img
+          src="https://images.unsplash.com/photo-1532996122724-e3c354a0b15b?q=80&w=900&auto=format&fit=crop"
+          alt=""
+          style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }}
+        />
+        <div style={{ position: "absolute", inset: 0, background: "linear-gradient(to top, rgba(20,21,26,0.95) 0%, rgba(20,21,26,0.3) 60%)" }} />
+        <div style={{ position: "relative", zIndex: 2, padding: "48px 40px" }}>
+          <div style={{ ...S.label, marginBottom: 16 }}>— Citizen Portal</div>
+          <h1 style={{ ...S.title, fontSize: 64 }}>
+            Report<br /><span style={{ color: C.yellow }}>Issue</span>
+          </h1>
+          <p style={{ ...S.body, marginTop: 20 }}>
+            Snap or upload a photo of an uncleaned area. GPS-tagged and submitted to our AI verification queue instantly.
+          </p>
+        </div>
+      </div>
 
-        {/* SELECT */}
-        {mode === "select" && (
-          <motion.div key="select"
-            initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -20 }}
-            className="w-full text-center">
-            <h1 className="text-3xl font-bold text-white mb-2">Report an Issue</h1>
-            <p className="mb-10" style={{ color: C.light }}>
-              Help keep our city clean. Snap a photo of the uncleaned area.
-            </p>
+      {/* Right panel — form */}
+      <div style={{
+        flex: 1, padding: "60px 60px",
+        background: C.darker,
+        display: "flex", flexDirection: "column", justifyContent: "center",
+      }}>
+        <AnimatePresence mode="wait">
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <button onClick={() => setMode("camera")}
-                className="group relative p-8 rounded-2xl flex flex-col items-center justify-center border transition-all hover:scale-[1.02]"
-                style={{ background: "rgba(15,40,98,0.35)", borderColor: "rgba(79,95,118,0.4)" }}>
-                <div className="p-5 rounded-full mb-4 transition-transform group-hover:scale-110"
-                  style={{ background: "rgba(158,54,58,0.2)" }}>
-                  <Camera size={40} style={{ color: C.red }} />
-                </div>
-                <h3 className="text-lg font-semibold text-white">Use Live Camera</h3>
-                <p className="text-sm mt-2" style={{ color: C.light }}>Recommended for accuracy</p>
-              </button>
+          {/* SELECT */}
+          {mode === "select" && (
+            <motion.div key="select"
+              initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -20 }}
+              transition={{ duration: 0.5 }}>
+              <div style={S.label}>Step 01</div>
+              <h2 style={{ fontFamily: "'Cormorant Garamond', serif", fontSize: 48, fontWeight: 300, fontStyle: "italic", color: C.silver, margin: "12px 0 8px" }}>
+                Choose Method
+              </h2>
+              <p style={{ ...S.body, marginBottom: 48 }}>Select how you'd like to capture the uncleaned area.</p>
 
-              <label className="group relative p-8 rounded-2xl flex flex-col items-center justify-center border transition-all hover:scale-[1.02] cursor-pointer"
-                style={{ background: "rgba(15,40,98,0.35)", borderColor: "rgba(79,95,118,0.4)" }}>
-                <input type="file" accept="image/*" className="hidden" onChange={handleFileUpload} />
-                <div className="p-5 rounded-full mb-4 transition-transform group-hover:scale-110"
-                  style={{ background: "rgba(79,95,118,0.25)" }}>
-                  <ImageIcon size={40} style={{ color: C.light }} />
-                </div>
-                <h3 className="text-lg font-semibold text-white">Upload Gallery</h3>
-                <p className="text-sm mt-2" style={{ color: C.light }}>Select an existing photo</p>
-              </label>
-            </div>
-          </motion.div>
-        )}
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+                {[
+                  { label: "Live Camera", sub: "Recommended for accuracy", icon: Camera, action: () => setMode("camera") },
+                  { label: "Upload Photo", sub: "Select existing image", icon: ImageIcon, action: null },
+                ].map(({ label, sub, icon: Icon, action }, i) => (
+                  <div key={i}
+                    style={{
+                      border: `1px solid rgba(57,63,77,0.6)`,
+                      padding: "36px 28px", cursor: "pointer",
+                      transition: "all 0.35s", background: "rgba(29,30,34,0.5)",
+                      display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 16,
+                      position: "relative",
+                    }}
+                    onClick={action ?? undefined}
+                    onMouseEnter={e => {
+                      e.currentTarget.style.borderColor = C.yellow;
+                      e.currentTarget.style.background = "rgba(254,218,106,0.04)";
+                    }}
+                    onMouseLeave={e => {
+                      e.currentTarget.style.borderColor = "rgba(57,63,77,0.6)";
+                      e.currentTarget.style.background = "rgba(29,30,34,0.5)";
+                    }}>
+                    {i === 1 && (
+                      <label style={{ position: "absolute", inset: 0, cursor: "pointer" }}>
+                        <input type="file" accept="image/*" style={{ display: "none" }} onChange={handleFileUpload} />
+                      </label>
+                    )}
+                    <div style={{ padding: "10px", border: `1px solid rgba(254,218,106,0.2)`, background: "rgba(254,218,106,0.05)" }}>
+                      <Icon size={22} style={{ color: C.yellow }} />
+                    </div>
+                    <div>
+                      <div style={{ fontFamily: "'Rajdhani', sans-serif", fontSize: 16, fontWeight: 600, color: C.silver, marginBottom: 4 }}>{label}</div>
+                      <div style={{ ...S.body, fontSize: 13 }}>{sub}</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </motion.div>
+          )}
 
-        {/* CAMERA */}
-        {mode === "camera" && (
-          <motion.div key="camera"
-            initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0 }}
-            className="w-full flex flex-col items-center">
-            <div className="w-full flex justify-between items-center mb-6">
+          {/* CAMERA */}
+          {mode === "camera" && (
+            <motion.div key="camera"
+              initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
+              transition={{ duration: 0.5 }}>
               <button onClick={() => setMode("select")}
-                className="flex items-center gap-2 transition-colors" style={{ color: C.light }}>
-                <ArrowLeft size={20} /> Back
+                style={{ display: "flex", alignItems: "center", gap: 8, background: "none", border: "none", cursor: "pointer", marginBottom: 32, ...S.body, fontSize: 13 }}>
+                <ArrowLeft size={16} style={{ color: C.yellow }} /> Back
               </button>
-              <h2 className="text-xl font-bold text-white">Live Capture</h2>
-              <div className="w-20" />
-            </div>
+              <div style={{ ...S.label, marginBottom: 24 }}>Step 02 — Capture</div>
 
-            <div className="relative w-full aspect-[3/4] md:aspect-video bg-black rounded-3xl overflow-hidden shadow-2xl">
-              <Webcam audio={false} ref={webcamRef} screenshotFormat="image/jpeg"
-                videoConstraints={{ facingMode: "environment" }}
-                className="absolute inset-0 w-full h-full object-cover" />
-
-              {/* Landmark overlay */}
-              <div className="absolute inset-0 pointer-events-none flex flex-col items-center justify-center border-4 border-dashed border-white/30 m-8 rounded-xl">
-                <Target size={64} className="mb-4" style={{ color: "rgba(255,255,255,0.6)" }} />
-                <div className="bg-black/60 backdrop-blur-md px-4 py-2 rounded-full text-white text-sm font-medium text-center">
-                  Include a static landmark (pole, tree, gate)
+              <div style={{ position: "relative", width: "100%", aspectRatio: "16/9", background: "#000", overflow: "hidden" }}>
+                <Webcam audio={false} ref={webcamRef} screenshotFormat="image/jpeg"
+                  videoConstraints={{ facingMode: "environment" }}
+                  style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }} />
+                <div style={{
+                  position: "absolute", inset: "24px", border: "1px dashed rgba(254,218,106,0.3)",
+                  display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column", gap: 12,
+                }}>
+                  <Target size={40} style={{ color: "rgba(254,218,106,0.5)" }} />
+                  <div style={{ fontFamily: "'Rajdhani', sans-serif", fontSize: 10, letterSpacing: "0.3em", textTransform: "uppercase", color: "rgba(254,218,106,0.5)" }}>
+                    Include a landmark
+                  </div>
+                </div>
+                {/* Shutter */}
+                <div style={{ position: "absolute", bottom: 24, left: "50%", transform: "translateX(-50%)" }}>
+                  <button onClick={handleCapture}
+                    style={{
+                      width: 60, height: 60, borderRadius: "50%", background: C.yellow,
+                      border: `3px solid rgba(254,218,106,0.3)`, cursor: "pointer",
+                      boxShadow: `0 0 24px rgba(254,218,106,0.4)`, transition: "all 0.2s",
+                    }}
+                    onMouseEnter={e => (e.currentTarget.style.transform = "scale(1.08)")}
+                    onMouseLeave={e => (e.currentTarget.style.transform = "scale(1)")} />
                 </div>
               </div>
+            </motion.div>
+          )}
 
-              <div className="absolute bottom-8 left-0 right-0 flex justify-center">
-                <button onClick={handleCapture}
-                  className="w-16 h-16 bg-white rounded-full border-4 hover:scale-105 active:scale-95 transition-all shadow-xl"
-                  style={{ borderColor: C.red, boxShadow: `0 0 20px rgba(158,54,58,0.5)` }} />
+          {/* PREVIEW */}
+          {mode === "preview" && (
+            <motion.div key="preview"
+              initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
+              transition={{ duration: 0.5 }}>
+              <div style={{ ...S.label, marginBottom: 24 }}>Step 03 — Review</div>
+              <h2 style={{ fontFamily: "'Cormorant Garamond', serif", fontSize: 40, fontWeight: 300, fontStyle: "italic", color: C.silver, margin: "0 0 24px" }}>
+                Review Photo
+              </h2>
+
+              <div style={{ position: "relative", width: "100%", aspectRatio: "16/9", overflow: "hidden", marginBottom: 20 }}>
+                <img src={capturedImg!} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                <div style={{ position: "absolute", inset: 0, border: `1px solid rgba(254,218,106,0.15)`, pointerEvents: "none" }} />
               </div>
-            </div>
-          </motion.div>
-        )}
 
-        {/* PREVIEW */}
-        {mode === "preview" && (
-          <motion.div key="preview"
-            initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
-            className="w-full flex flex-col items-center">
-            <h2 className="text-2xl font-bold text-white mb-6">Review Photo</h2>
+              {locationInfo && (
+                <div style={{
+                  display: "flex", alignItems: "flex-start", gap: 12,
+                  padding: "14px 18px", border: `1px solid rgba(57,63,77,0.5)`,
+                  background: "rgba(29,30,34,0.6)", marginBottom: 28,
+                }}>
+                  <MapPin size={14} style={{ color: C.yellow, marginTop: 2, flexShrink: 0 }} />
+                  <div>
+                    <div style={{ fontFamily: "'Rajdhani', sans-serif", fontSize: 10, letterSpacing: "0.25em", textTransform: "uppercase", color: "rgba(212,212,220,0.4)", marginBottom: 4 }}>Location Detected</div>
+                    <div style={{ fontFamily: "'Rajdhani', sans-serif", fontSize: 13, color: "rgba(212,212,220,0.6)", wordBreak: "break-all" }}>{locationInfo.label}</div>
+                  </div>
+                </div>
+              )}
 
-            <div className="relative w-full aspect-video rounded-3xl overflow-hidden shadow-lg border mb-4"
-              style={{ borderColor: "rgba(79,95,118,0.4)" }}>
-              <img src={capturedImg!} alt="Captured" className="w-full h-full object-cover" />
-            </div>
-
-            {/* Location preview */}
-            {locationInfo && (
-              <div className="w-full flex items-start gap-2 rounded-xl px-4 py-3 mb-6 border text-sm"
-                style={{ background: "rgba(15,40,98,0.4)", borderColor: "rgba(79,95,118,0.35)" }}>
-                <MapPin size={14} className="mt-0.5 shrink-0" style={{ color: C.red }} />
-                <div>
-                  <p className="font-semibold text-white text-xs uppercase tracking-wider mb-0.5">Location Detected</p>
-                  <p className="break-all" style={{ color: C.light, fontSize: "11px" }}>{locationInfo.label}</p>
-                  {locationInfo.lat !== undefined && (
-                    <p className="font-mono mt-0.5" style={{ color: C.slate, fontSize: "11px" }}>
-                      {locationInfo.lat.toFixed(5)}, {locationInfo.lng?.toFixed(5)}
-                    </p>
+              <div style={{ display: "flex", gap: 12 }}>
+                <button onClick={() => setMode("select")} disabled={isUploading}
+                  style={{
+                    flex: 1, padding: "15px", background: "transparent",
+                    border: `1px solid rgba(57,63,77,0.6)`, color: C.silver,
+                    fontFamily: "'Rajdhani', sans-serif", fontSize: 11, letterSpacing: "0.3em", textTransform: "uppercase", fontWeight: 600,
+                    cursor: "pointer", transition: "all 0.3s",
+                  }}>
+                  Retake
+                </button>
+                <button onClick={handleSubmit} disabled={isUploading}
+                  style={{
+                    flex: 2, padding: "15px",
+                    background: isUploading ? C.grey : C.yellow,
+                    border: "none", color: C.dark,
+                    fontFamily: "'Rajdhani', sans-serif", fontSize: 11, letterSpacing: "0.3em", textTransform: "uppercase", fontWeight: 700,
+                    cursor: "pointer", transition: "all 0.3s",
+                    display: "flex", alignItems: "center", justifyContent: "center", gap: 10,
+                  }}>
+                  {isUploading ? (
+                    <><div style={{ width: 16, height: 16, border: "2px solid rgba(29,30,34,0.3)", borderTopColor: C.dark, borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />Uploading...</>
+                  ) : (
+                    <><UploadCloud size={16} /> Submit Report</>
                   )}
-                </div>
+                </button>
               </div>
-            )}
+              <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+            </motion.div>
+          )}
 
-            <div className="flex gap-4 w-full">
-              <button onClick={() => setMode("select")} disabled={isUploading}
-                className="flex-1 py-3 px-6 rounded-xl font-semibold border transition-colors"
-                style={{ borderColor: C.slate, color: C.light }}>
-                Retake
-              </button>
-              <button onClick={handleSubmit} disabled={isUploading}
-                className="flex-1 py-3 px-6 rounded-xl font-semibold text-white flex justify-center items-center gap-2 transition-colors"
-                style={{ background: isUploading ? C.slate : C.red }}>
-                {isUploading ? (
-                  <>
-                    <div className="animate-spin h-5 w-5 border-2 border-white/30 border-t-white rounded-full" />
-                    Uploading...
-                  </>
-                ) : (
-                  <>
-                    <UploadCloud size={20} /> Submit Report
-                  </>
-                )}
-              </button>
-            </div>
-          </motion.div>
-        )}
-
-        {/* SUCCESS */}
-        {mode === "success" && (
-          <motion.div key="success"
-            initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }}
-            className="w-full text-center flex flex-col items-center py-12">
-            <div className="w-24 h-24 rounded-full flex items-center justify-center mb-6"
-              style={{ background: "rgba(34,197,94,0.15)", border: "2px solid rgba(34,197,94,0.4)" }}>
-              <CheckCircle size={48} style={{ color: "#22c55e" }} />
-            </div>
-            <h2 className="text-3xl font-bold text-white mb-4">Report Submitted!</h2>
-            <p className="mb-8" style={{ color: C.light }}>
-              Your issue has been logged and assigned to a worker for resolution.
-            </p>
-            {locationInfo?.lat !== undefined && (
-              <div className="flex items-center gap-2 mb-6 text-sm" style={{ color: C.light }}>
-                <MapPin size={14} style={{ color: C.red }} />
-                {locationInfo.label}
+          {/* SUCCESS */}
+          {mode === "success" && (
+            <motion.div key="success"
+              initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}
+              transition={{ duration: 0.6 }}
+              style={{ textAlign: "center", display: "flex", flexDirection: "column", alignItems: "center", padding: "40px 0" }}>
+              <div style={{
+                width: 80, height: 80, border: `1px solid rgba(254,218,106,0.3)`,
+                display: "flex", alignItems: "center", justifyContent: "center",
+                marginBottom: 32, background: "rgba(254,218,106,0.05)",
+              }}>
+                <CheckCircle size={36} style={{ color: C.yellow }} />
               </div>
-            )}
-            <button onClick={() => navigate("/admin")}
-              className="py-3 px-8 rounded-xl font-semibold text-white"
-              style={{ background: C.blue }}>
-              View in Admin Dashboard
-            </button>
-          </motion.div>
-        )}
+              <div style={{ ...S.label, marginBottom: 16 }}>Report Submitted</div>
+              <h2 style={{ fontFamily: "'Cormorant Garamond', serif", fontSize: 56, fontWeight: 300, fontStyle: "italic", color: C.silver, margin: "0 0 16px" }}>
+                Thank You
+              </h2>
+              <p style={{ ...S.body, maxWidth: 360, marginBottom: 40 }}>
+                Your issue has been logged and assigned to a worker for resolution.
+              </p>
+              <button onClick={() => navigate("/admin")}
+                style={{
+                  display: "inline-flex", alignItems: "center", gap: 14,
+                  padding: "15px 36px", background: C.yellow, color: C.dark,
+                  fontFamily: "'Rajdhani', sans-serif", fontSize: 11, letterSpacing: "0.3em", textTransform: "uppercase", fontWeight: 700,
+                  border: "none", cursor: "pointer",
+                }}>
+                View Dashboard <ArrowRight size={14} />
+              </button>
+            </motion.div>
+          )}
 
-      </AnimatePresence>
+        </AnimatePresence>
+      </div>
     </div>
   );
 };
