@@ -69,7 +69,7 @@ export const Worker = () => {
           if (workerLat !== undefined && workerLng !== undefined && cr?.lat !== undefined && cr?.lng !== undefined) {
             if (haversineMetres(cr.lat, cr.lng, workerLat, workerLng) > 200) locationMismatch = true;
           }
-          const passed = !locationMismatch && Math.random() > 0.2;
+          const passed = !locationMismatch;
           const rh = () => Math.floor(Math.random() * 10) + 90;
           const rl = () => Math.floor(Math.random() * 35) + 45;
           const result = { passed, ela: passed ? rh() : rl(), clean: passed ? rh() : rl(), yolo: passed ? rh() : rl(), opencv: passed ? rh() : rl() };
