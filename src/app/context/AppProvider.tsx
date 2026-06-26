@@ -103,7 +103,6 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
     workerImageBase64?: string
   ) => {
     try {
-      // Get existing report first
       const res = await fetch(
         `${SUPABASE_URL}/rest/v1/${TABLE}?key=eq.report_${id}&select=*`,
         { headers }
