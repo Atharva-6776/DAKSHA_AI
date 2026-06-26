@@ -1,16 +1,25 @@
 import React, { createContext, useContext, useState, useEffect } from "react";
-import { projectId, publicAnonKey } from '/utils/supabase/info';
+
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
+const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
+const TABLE = "kv_store_84bb53da";
+
+const headers = {
+  "Content-Type": "application/json",
+  "apikey": SUPABASE_KEY,
+  "Authorization": `Bearer ${SUPABASE_KEY}`,
+};
 
 export type Report = {
   id: string;
   citizenImage: string;
   status: "Pending" | "Verified" | "Rejected";
   date: string;
-  location: string;        // human-readable address / label
-  lat?: number;            // GPS latitude  (set when citizen submits)
-  lng?: number;            // GPS longitude (set when citizen submits)
-  workerLat?: number;      // GPS latitude  (set when worker resolves)
-  workerLng?: number;      // GPS longitude (set when worker resolves)
+  location: string;
+  lat?: number;
+  lng?: number;
+  workerLat?: number;
+  workerLng?: number;
   workerImage?: string;
   integrityScore?: number;
   cleanlinessScore?: number;
@@ -32,16 +41,26 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
   const [reports, setReports] = useState<Report[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const API_URL = `https://${projectId}.supabase.co/functions/v1/make-server-84bb53da`;
-
   const fetchReports = async () => {
     setLoading(true);
     try {
-      const res = await fetch(`${API_URL}/reports`, {
-        headers: { Authorization: `Bearer ${publicAnonKey}` },
-      });
+      const res = await fetch(
+        `${SUPABASE_URL}/rest/v1/${TABLE}?select=*&key=like.report_*`,
+        { headers }
+      );
       const data = await res.json();
-      if (data.reports) setReports(data.reports);
+      if (Array.isArray(data)) {
+        const parsed = data
+          .map((row: any) => {
+            try {
+              return typeof row.value === "string"
+                ? JSON.parse(row.value)
+                : row.value;
+            } catch { return null; }
+          })
+          .filter(Boolean) as Report[];
+        setReports(parsed);
+      }
     } catch (err) {
       console.error("Failed to fetch reports:", err);
     } finally {
@@ -53,14 +72,25 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
 
   const addReport = async (report: Partial<Report>, citizenImageBase64: string) => {
     try {
-      await fetch(`${API_URL}/reports`, {
+      const fullReport: Report = {
+        id: report.id!,
+        citizenImage: citizenImageBase64,
+        status: "Pending",
+        date: report.date ?? new Date().toISOString(),
+        location: report.location ?? "Unknown",
+        lat: report.lat,
+        lng: report.lng,
+      };
+
+      await fetch(`${SUPABASE_URL}/rest/v1/${TABLE}`, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${publicAnonKey}`,
-        },
-        body: JSON.stringify({ ...report, citizenImageBase64 }),
+        headers: { ...headers, "Prefer": "return=minimal" },
+        body: JSON.stringify({
+          key: `report_${fullReport.id}`,
+          value: fullReport,
+        }),
       });
+
       await fetchReports();
     } catch (err) {
       console.error("Error adding report:", err);
@@ -73,14 +103,33 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
     workerImageBase64?: string
   ) => {
     try {
-      await fetch(`${API_URL}/reports/${id}`, {
-        method: "PUT",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${publicAnonKey}`,
-        },
-        body: JSON.stringify({ ...updates, workerImageBase64 }),
-      });
+      // Get existing report first
+      const res = await fetch(
+        `${SUPABASE_URL}/rest/v1/${TABLE}?key=eq.report_${id}&select=*`,
+        { headers }
+      );
+      const rows = await res.json();
+      if (!rows.length) return;
+
+      const existing: Report = typeof rows[0].value === "string"
+        ? JSON.parse(rows[0].value)
+        : rows[0].value;
+
+      const updated: Report = {
+        ...existing,
+        ...updates,
+        ...(workerImageBase64 ? { workerImage: workerImageBase64 } : {}),
+      };
+
+      await fetch(
+        `${SUPABASE_URL}/rest/v1/${TABLE}?key=eq.report_${id}`,
+        {
+          method: "PATCH",
+          headers: { ...headers, "Prefer": "return=minimal" },
+          body: JSON.stringify({ value: updated }),
+        }
+      );
+
       await fetchReports();
     } catch (err) {
       console.error("Error updating report:", err);
