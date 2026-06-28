@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useEffect } from "react";
+import { useState, useRef, useCallback } from "react";
 import Webcam from "react-webcam";
 import { Camera, Image as ImageIcon, CheckCircle, Target, ArrowLeft, ArrowRight, UploadCloud, MapPin, Loader2 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
@@ -18,6 +18,7 @@ export const Citizen = () => {
   const [isUploading, setIsUploading] = useState(false);
   const [locationInfo, setLocationInfo] = useState<{ label: string; lat?: number; lng?: number } | null>(null);
   const [locationLoading, setLocationLoading] = useState(false);
+  const locationRef = useRef<{ label: string; lat?: number; lng?: number } | null>(null);
   const webcamRef = useRef<Webcam>(null);
   const { addReport } = useAppContext();
   const navigate = useNavigate();
@@ -25,7 +26,9 @@ export const Citizen = () => {
   const resolveLocation = useCallback(() => {
     setLocationLoading(true);
     if (!navigator.geolocation) {
-      setLocationInfo({ label: "Location not supported" });
+      const info = { label: "Location not supported" };
+      setLocationInfo(info);
+      locationRef.current = info;
       setLocationLoading(false);
       return;
     }
@@ -38,14 +41,24 @@ export const Citizen = () => {
             { headers: { "Accept-Language": "en" } }
           );
           const data = await res.json();
-          setLocationInfo({ label: data.display_name ?? `${lat.toFixed(5)}, ${lng.toFixed(5)}`, lat, lng });
+          const info = {
+            label: data.display_name ?? `${lat.toFixed(5)}, ${lng.toFixed(5)}`,
+            lat,
+            lng,
+          };
+          setLocationInfo(info);
+          locationRef.current = info;
         } catch {
-          setLocationInfo({ label: `${lat.toFixed(5)}, ${lng.toFixed(5)}`, lat, lng });
+          const info = { label: `${lat.toFixed(5)}, ${lng.toFixed(5)}`, lat, lng };
+          setLocationInfo(info);
+          locationRef.current = info;
         }
         setLocationLoading(false);
       },
       () => {
-        setLocationInfo({ label: "Location unavailable" });
+        const info = { label: "Location unavailable" };
+        setLocationInfo(info);
+        locationRef.current = info;
         setLocationLoading(false);
       },
       { enableHighAccuracy: true, timeout: 10000 }
@@ -77,13 +90,14 @@ export const Citizen = () => {
     if (locationLoading) return;
     setIsUploading(true);
     const newId = `RPT-${Math.floor(Math.random() * 9000) + 1000}`;
+    const loc = locationRef.current;
     await addReport({
       id: newId,
       status: "Pending",
       date: new Date().toISOString(),
-      location: locationInfo?.label ?? "Unknown",
-      lat: locationInfo?.lat,
-      lng: locationInfo?.lng,
+      location: loc?.label ?? "Unknown",
+      lat: loc?.lat,
+      lng: loc?.lng,
     }, capturedImg ?? "");
     setIsUploading(false);
     setMode("success");
@@ -93,14 +107,21 @@ export const Citizen = () => {
     <div style={{ width: "100%", minHeight: "80vh", display: "flex", alignItems: "stretch" }}>
 
       {/* Left panel */}
-      <div style={{ width: "40%", position: "relative", overflow: "hidden", display: "flex", flexDirection: "column", justifyContent: "flex-end", minHeight: 600 }}>
+      <div style={{
+        width: "40%", position: "relative", overflow: "hidden",
+        display: "flex", flexDirection: "column", justifyContent: "flex-end", minHeight: 600,
+      }}>
         <img src="https://images.unsplash.com/photo-1532996122724-e3c354a0b15b?q=80&w=900&auto=format&fit=crop" alt=""
           style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }} />
         <div style={{ position: "absolute", inset: 0, background: "linear-gradient(to top, rgba(20,21,26,0.95) 0%, rgba(20,21,26,0.3) 60%)" }} />
         <div style={{ position: "relative", zIndex: 2, padding: "48px 40px" }}>
           <div style={{ ...S.label, marginBottom: 16 }}>— Citizen Portal</div>
-          <h1 style={{ ...S.title, fontSize: 64 }}>Report<br /><span style={{ color: C.yellow }}>Issue</span></h1>
-          <p style={{ ...S.body, marginTop: 20 }}>Snap or upload a photo of an uncleaned area. GPS-tagged and submitted to our AI verification queue instantly.</p>
+          <h1 style={{ ...S.title, fontSize: 64 }}>
+            Report<br /><span style={{ color: C.yellow }}>Issue</span>
+          </h1>
+          <p style={{ ...S.body, marginTop: 20 }}>
+            Snap or upload a photo of an uncleaned area. GPS-tagged and submitted to our AI verification queue instantly.
+          </p>
         </div>
       </div>
 
@@ -110,14 +131,19 @@ export const Citizen = () => {
 
           {/* SELECT */}
           {mode === "select" && (
-            <motion.div key="select" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -20 }} transition={{ duration: 0.5 }}>
+            <motion.div key="select"
+              initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -20 }}
+              transition={{ duration: 0.5 }}>
               <div style={S.label}>Step 01</div>
-              <h2 style={{ fontFamily: "'Cormorant Garamond', serif", fontSize: 48, fontWeight: 300, fontStyle: "italic", color: C.silver, margin: "12px 0 8px" }}>Choose Method</h2>
+              <h2 style={{ fontFamily: "'Cormorant Garamond', serif", fontSize: 48, fontWeight: 300, fontStyle: "italic", color: C.silver, margin: "12px 0 8px" }}>
+                Choose Method
+              </h2>
               <p style={{ ...S.body, marginBottom: 48 }}>Select how you'd like to capture the uncleaned area.</p>
+
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
                 {[
-                  { label: "Live Camera", sub: "Recommended for accuracy", icon: Camera, action: () => setMode("camera") },
-                  { label: "Upload Photo", sub: "Select existing image", icon: ImageIcon, action: null },
+                  { label: "Live Camera",   sub: "Recommended for accuracy", icon: Camera,    action: () => setMode("camera") },
+                  { label: "Upload Photo",  sub: "Select existing image",    icon: ImageIcon, action: null },
                 ].map(({ label, sub, icon: Icon, action }, i) => (
                   <div key={i}
                     style={{ border: `1px solid rgba(57,63,77,0.6)`, padding: "36px 28px", cursor: "pointer", transition: "all 0.35s", background: "rgba(29,30,34,0.5)", display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 16, position: "relative" }}
@@ -144,19 +170,24 @@ export const Citizen = () => {
 
           {/* CAMERA */}
           {mode === "camera" && (
-            <motion.div key="camera" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.5 }}>
+            <motion.div key="camera"
+              initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
+              transition={{ duration: 0.5 }}>
               <button onClick={() => setMode("select")}
                 style={{ display: "flex", alignItems: "center", gap: 8, background: "none", border: "none", cursor: "pointer", marginBottom: 32, ...S.body, fontSize: 13 }}>
                 <ArrowLeft size={16} style={{ color: C.yellow }} /> Back
               </button>
               <div style={{ ...S.label, marginBottom: 24 }}>Step 02 — Capture</div>
+
               <div style={{ position: "relative", width: "100%", aspectRatio: "16/9", background: "#000", overflow: "hidden" }}>
                 <Webcam audio={false} ref={webcamRef} screenshotFormat="image/jpeg"
                   videoConstraints={{ facingMode: "environment" }}
                   style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }} />
                 <div style={{ position: "absolute", inset: "24px", border: "1px dashed rgba(254,218,106,0.3)", display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column", gap: 12 }}>
                   <Target size={40} style={{ color: "rgba(254,218,106,0.5)" }} />
-                  <div style={{ fontFamily: "'Rajdhani', sans-serif", fontSize: 10, letterSpacing: "0.3em", textTransform: "uppercase", color: "rgba(254,218,106,0.5)" }}>Include a landmark</div>
+                  <div style={{ fontFamily: "'Rajdhani', sans-serif", fontSize: 10, letterSpacing: "0.3em", textTransform: "uppercase", color: "rgba(254,218,106,0.5)" }}>
+                    Include a landmark
+                  </div>
                 </div>
                 <div style={{ position: "absolute", bottom: 24, left: "50%", transform: "translateX(-50%)" }}>
                   <button onClick={handleCapture}
@@ -170,9 +201,14 @@ export const Citizen = () => {
 
           {/* PREVIEW */}
           {mode === "preview" && (
-            <motion.div key="preview" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.5 }}>
+            <motion.div key="preview"
+              initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
+              transition={{ duration: 0.5 }}>
               <div style={{ ...S.label, marginBottom: 24 }}>Step 03 — Review</div>
-              <h2 style={{ fontFamily: "'Cormorant Garamond', serif", fontSize: 40, fontWeight: 300, fontStyle: "italic", color: C.silver, margin: "0 0 24px" }}>Review Photo</h2>
+              <h2 style={{ fontFamily: "'Cormorant Garamond', serif", fontSize: 40, fontWeight: 300, fontStyle: "italic", color: C.silver, margin: "0 0 24px" }}>
+                Review Photo
+              </h2>
+
               <div style={{ position: "relative", width: "100%", aspectRatio: "16/9", overflow: "hidden", marginBottom: 20 }}>
                 <img src={capturedImg!} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
                 <div style={{ position: "absolute", inset: 0, border: `1px solid rgba(254,218,106,0.15)`, pointerEvents: "none" }} />
@@ -182,7 +218,7 @@ export const Citizen = () => {
               <div style={{ display: "flex", alignItems: "flex-start", gap: 12, padding: "14px 18px", border: `1px solid rgba(57,63,77,0.5)`, background: "rgba(29,30,34,0.6)", marginBottom: 28 }}>
                 {locationLoading
                   ? <Loader2 size={14} style={{ color: C.yellow, marginTop: 2, flexShrink: 0, animation: "spin 1s linear infinite" }} />
-                  : <MapPin size={14} style={{ color: C.yellow, marginTop: 2, flexShrink: 0 }} />}
+                  : <MapPin   size={14} style={{ color: C.yellow, marginTop: 2, flexShrink: 0 }} />}
                 <div>
                   <div style={{ fontFamily: "'Rajdhani', sans-serif", fontSize: 10, letterSpacing: "0.25em", textTransform: "uppercase", color: "rgba(212,212,220,0.4)", marginBottom: 4 }}>
                     {locationLoading ? "Detecting Location..." : "Location Detected"}
@@ -215,14 +251,20 @@ export const Citizen = () => {
 
           {/* SUCCESS */}
           {mode === "success" && (
-            <motion.div key="success" initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} transition={{ duration: 0.6 }}
+            <motion.div key="success"
+              initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}
+              transition={{ duration: 0.6 }}
               style={{ textAlign: "center", display: "flex", flexDirection: "column", alignItems: "center", padding: "40px 0" }}>
               <div style={{ width: 80, height: 80, border: `1px solid rgba(254,218,106,0.3)`, display: "flex", alignItems: "center", justifyContent: "center", marginBottom: 32, background: "rgba(254,218,106,0.05)" }}>
                 <CheckCircle size={36} style={{ color: C.yellow }} />
               </div>
               <div style={{ ...S.label, marginBottom: 16 }}>Report Submitted</div>
-              <h2 style={{ fontFamily: "'Cormorant Garamond', serif", fontSize: 56, fontWeight: 300, fontStyle: "italic", color: C.silver, margin: "0 0 16px" }}>Thank You</h2>
-              <p style={{ ...S.body, maxWidth: 360, marginBottom: 40 }}>Your issue has been logged and assigned to a worker for resolution.</p>
+              <h2 style={{ fontFamily: "'Cormorant Garamond', serif", fontSize: 56, fontWeight: 300, fontStyle: "italic", color: C.silver, margin: "0 0 16px" }}>
+                Thank You
+              </h2>
+              <p style={{ ...S.body, maxWidth: 360, marginBottom: 40 }}>
+                Your issue has been logged and assigned to a worker for resolution.
+              </p>
               <button onClick={() => navigate("/admin")}
                 style={{ display: "inline-flex", alignItems: "center", gap: 14, padding: "15px 36px", background: C.yellow, color: C.dark, fontFamily: "'Rajdhani', sans-serif", fontSize: 11, letterSpacing: "0.3em", textTransform: "uppercase", fontWeight: 700, border: "none", cursor: "pointer" }}>
                 View Dashboard <ArrowRight size={14} />
