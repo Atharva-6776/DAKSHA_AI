@@ -1,2 +1,7 @@
 node_modules
 .env
+backend/GARBAGE-CLASSIFICATION-3-2/
+backend/runs/
+backend/venv/
+*.pt
+!backend/best.pt
