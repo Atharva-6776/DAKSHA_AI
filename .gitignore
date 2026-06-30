@@ -5,3 +5,8 @@ backend/runs/
 backend/venv/
 *.pt
 !backend/best.pt
+backend/GARBAGE-CLASSIFICATION-3-2/
+backend/runs/
+backend/venv/
+yolov8n.pt
+last.pt
