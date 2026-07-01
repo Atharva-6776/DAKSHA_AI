@@ -37,25 +37,29 @@ ALL_WASTE = set(TRAINED_WASTE_CLASSES + COCO_WASTE_CLASSES)
 
 
 def detect_waste(image_bytes: bytes):
-    """Run YOLO detection and return waste findings"""
     nparr = np.frombuffer(image_bytes, np.uint8)
     img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
 
     if img is None:
         return False, 0, []
 
-    results = model(img, verbose=False, conf=0.25)
+    results = model(img, verbose=False, conf=0.15)
 
     detected_waste = []
     confidence_scores = []
+    all_detections = []
 
     for result in results:
         for box in result.boxes:
             class_name = model.names[int(box.cls)].lower()
             confidence = float(box.conf)
+            all_detections.append(f"{class_name}:{confidence:.2f}")
             if class_name in ALL_WASTE:
                 detected_waste.append(class_name)
                 confidence_scores.append(confidence)
+
+    print(f"All detections: {all_detections}")
+    print(f"Waste detected: {detected_waste}")
 
     waste_detected = len(detected_waste) > 0
     avg_confidence = int(np.mean(confidence_scores) * 100) if confidence_scores else 0
